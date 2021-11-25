@@ -11,7 +11,7 @@ import MainWindowLoadUI
 
 class SessionHandler():
     def __init__(self):
-        self.con = sqlite3.connect("../PyQT5Ya/hexedit/Sessions.sqlite3")
+        self.con = sqlite3.connect("Sessions.sqlite3")
         self.cur = self.con.cursor()
         self.create_table()
 
