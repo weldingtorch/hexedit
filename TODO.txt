@@ -1,0 +1,10 @@
+1. Search of byte substring in file
+2. Add different encodings
+3. Make byteorder affect on text repr in long encodings(more than 1 byte)
+4. Make readme page and delete presentation
+5. Make binary file work
+6. Add picture tab
+7. Rewrite byte handing to use bytearray methods
+8. Make app usable through cmd(no gui)
+9. Make Input through text representation
+10. Add support for csv(or txt) colorschemes

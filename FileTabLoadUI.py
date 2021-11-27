@@ -25,7 +25,6 @@ def LoadUI(self):
     hh.setMaximumSectionSize(44)
     vh.setMinimumSectionSize(44)
     vh.setMaximumSectionSize(44)
-    print(vh.width())
 
     self.frame = QFrame(self)
     self.frame.setObjectName(u"frame")

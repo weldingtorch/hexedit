@@ -40,6 +40,59 @@ class SessionHandler():
                         """)
         return self.cur.fetchall()
 
+    def get_filedata(self, filetab_id):
+        self.cur.execute(f"""
+                            SELECT filepath, is_new, changes, byteorder, capitalize 
+                            FROM filedata INNER JOIN preferences USING (filetab_id) 
+                            WHERE filetab_id = ?
+                        """, (filetab_id,))
+        return self.cur.fetchall()[0]
+
+    def get_filelength(self, filetab_id):
+        self.cur.execute("SELECT length FROM file_length WHERE filetab_id = ?", (filetab_id,))
+        return self.cur.fetchall()[0][0]
+
+    def set_filedata(self, filetab):
+        self.cur.execute(f"""
+                            INSERT INTO filedata(filepath, is_new, changes) 
+                            VALUES(?, ?, ?)
+                        """, (filetab.filepath, filetab.is_new, pickle.dumps(filetab.changes),))
+        self.cur.execute(f"""
+                            INSERT INTO preferences(byteorder, capitalize)
+                            VALUES(?, ?)
+                        """, (filetab.byteorder, filetab.cap,))
+        self.cur.execute(f"""
+                            INSERT INTO file_length(length) VALUES(?)
+                        """, (filetab.length,))
+        self.con.commit()
+
+        return self.cur.lastrowid
+
+    def update_filedata(self, filetab):
+        self.cur.execute("""
+                            UPDATE filedata SET changes = ? WHERE filetab_id = ?
+                        """, (pickle.dumps(filetab.changes), filetab.filetab_id,))
+        self.cur.execute(f"""       
+                            UPDATE preferences SET byteorder = ?, capitalize = ?
+                            WHERE filetab_id = ?
+                        """, (filetab.byteorder, filetab.cap, filetab.filetab_id,))
+        self.cur.execute(f"""
+                            UPDATE file_length SET length = ? WHERE filetab_id = ?
+                        """, (filetab.length, filetab.filetab_id,))
+        self.con.commit()
+
+    def delete_filedata(self, filetab_id):
+        self.cur.execute("""
+                            DELETE FROM filedata WHERE filetab_id = ?
+                        """, (filetab_id,))
+        self.cur.execute("""
+                            DELETE FROM preferences WHERE filetab_id = ?
+                        """, (filetab_id,))
+        self.cur.execute("""
+                            DELETE FROM file_length WHERE filetab_id = ?
+                        """, (filetab_id,))
+        self.con.commit()
+
 
 class MainWindow(QMainWindow):
     def __init__(self, session):
@@ -74,7 +127,7 @@ class MainWindow(QMainWindow):
             if btn == QMessageBox.Yes.numerator:
                 for id in ids:
                     try:
-                        new_tab = FileTab(self, self.session, id=id[0])
+                        new_tab = FileTab(self, self.session, filetab_id=id[0])
                         self.tabs.addTab(new_tab, new_tab.filepath.split("\\")[-1])
                     except FileExistsError:
                         pass
@@ -89,39 +142,37 @@ class MainWindow(QMainWindow):
             tab_name = filepath.split("/")[-1]
         else:
             tab_name = "unnamed"
-
-        new_tab = FileTab(self, self.session, tab_name, new)
-        self.tabs.addTab(new_tab, tab_name)
-        if not new:
-            self.tabs.setTabToolTip(self.tabs.count() - 1, filepath)
+        try:
+            new_tab = FileTab(self, self.session, tab_name, new)
+            self.tabs.addTab(new_tab, tab_name)
+            if not new:
+                self.tabs.setTabToolTip(self.tabs.count() - 1, filepath)
+        except (FileNotFoundError, ValueError):
+            pass
 
     def save_file(self, save_all=False):
         if not save_all:
             tab = self.tabs.currentWidget()
             if tab is not None:
-                tab.save()
+                tab.save_tab()
         else:
             for tab_index in range(self.tabs.count()):
-                self.tabs.widget(tab_index).save()
+                self.tabs.widget(tab_index).save_tab()
 
     def close_file(self, index=None, close_all=False):
         if not close_all:
             if index is None:
-                tab = self.tabs.currentWidget()
-                if tab is not None:
-                    index = tab.index()
-                else:
-                    return -1
-            else:
-                tab = self.tabs.widget(index)
-            if tab.close() == 0:
-                tab.delete_data()
+                index = self.tabs.currentIndex()
+
+            tab = self.tabs.widget(index)
+            if tab.close_tab() == 0:
+                tab.session.delete_filedata(tab.filetab_id)
                 self.tabs.removeTab(index)
         else:
             for _ in range(self.tabs.count()):
                 tab = self.tabs.widget(0)
-                if tab.close() == 0:
-                    tab.delete_data()
+                if tab.close_tab() == 0:
+                    tab.session.delete_filedata(tab.filetab_id)
                     self.tabs.removeTab(0)
                 else:
                     return -1
@@ -135,87 +186,29 @@ class MainWindow(QMainWindow):
 
 
 class FileTab(QWidget):
-    def __init__(self, parent, session, filepath=None, isNew=False, id=None):
+    def __init__(self, parent, session, filepath=None, is_new=False, filetab_id=None):
         super().__init__(parent)
 
         self.session = session
-        self.id = id
+        self.filetab_id = filetab_id
         self.data = None
         self.length = None
         self.byteorder = "big"
-        self.cap = False
+        self.cap = True
 
-        if id is not None:
-            self.load_data()
+        if self.filetab_id is not None:
+            self.load_filedata()
         else:
             self.filepath = filepath
-            self.isNew = isNew
+            self.is_new = is_new
             self.changes = dict()
 
         self.LoadUI()
-        if self.id is None:
-            self.create_data()
-
-    def load_data(self):
-        self.cur.execute(f"""
-                        SELECT filepath, is_new, changes, byteorder, capitalize 
-                        FROM filedata INNER JOIN preferences USING (filetab_id) 
-                        WHERE filetab_id = ?
-                        """, (self.id,))
-        filedata = self.cur.fetchall()
-        if filedata:
-            self.filepath, self.isNew, changes, self.byteorder, cap = filedata[0]
-            self.changes = pickle.loads(changes)
-            self.cap = bool(cap)
-            if self.isNew:
-                self.cur.execute("SELECT length FROM file_length WHERE filetab_id = ?", (self.id,))
-                self.length = self.cur.fetchall()[0][0]
-        else:
-            self.filepath, self.isNew, self.changes, self.length = [None] * 4
-
-    def create_data(self):
-        self.cur.execute(f"""
-                            INSERT INTO filedata(filepath, is_new, changes) 
-                            VALUES(?, ?, ?)
-                        """, (self.filepath, self.isNew, pickle.dumps(self.changes),))
-        self.cur.execute(f"""
-                            INSERT INTO preferences(byteorder, capitalize)
-                            VALUES(?, ?)
-                        """, (self.byteorder, self.cap,))
-        self.cur.execute(f"""
-                            INSERT INTO file_length(length) VALUES(?)
-                        """, (self.length,))
-        self.con.commit()
-
-        self.id = self.cur.lastrowid
-
-    def update_data(self):
-        self.cur.execute("""
-                            UPDATE filedata SET changes = ? WHERE filetab_id = ?
-                        """, (pickle.dumps(self.changes), self.id,))
-        self.cur.execute(f"""       
-                            UPDATE preferences SET byteorder = ?, capitalize = ?
-                            WHERE filetab_id = ?
-                        """, (self.byteorder, self.cap, self.id,))
-        self.cur.execute(f"""
-                            UPDATE file_length SET length = ? WHERE filetab_id = ?
-                        """, (self.length, self.id,))
-        self.con.commit()
-
-    def delete_data(self):
-        self.cur.execute("""
-                            DELETE FROM filedata WHERE filetab_id = ?
-                        """, (self.id,))
-        self.cur.execute("""
-                            DELETE FROM preferences WHERE filetab_id = ?
-                        """, (self.id,))
-        self.cur.execute("""
-                            DELETE FROM file_length WHERE filetab_id = ?
-                        """, (self.id,))
-        self.con.commit()
+        if self.filetab_id is None:
+            self.filetab_id = self.session.set_filedata(self)
 
     def LoadUI(self):
-        if not self.isNew:
+        if not self.is_new:
             retry_flag = True
             while retry_flag:
                 try:
@@ -238,20 +231,31 @@ class FileTab(QWidget):
                         continue
 
                     elif btn == QMessageBox.Yes.numerator:
-                        self.delete_data()
+                        self.session.delete_filedata(self.filetab_id)
 
-                    raise FileExistsError
+                    raise FileNotFoundError
         else:
             if self.length is None:
                 self.length, ok = QInputDialog.getInt(self, "Set file size", "Enter file size in bytes",
                                                       256, 1, 16 ** 4, 16)
                 if not ok:
                     self.close()
+                    raise ValueError
             self.data = bytearray(self.length)
 
         FileTabLoadUI.LoadUI(self)
         self.fill_table()
         self.update_repr(full_fill=True)
+        return 0
+
+    def load_filedata(self):
+        filedata = self.session.get_filedata(self.filetab_id)
+        if filedata:
+            self.filepath, self.is_new, changes, self.byteorder, cap = filedata
+            self.changes = pickle.loads(changes)
+            self.cap = bool(cap)
+            if self.is_new:
+                self.length = self.session.get_filelength(self.filetab_id)
 
     def change_prefs(self, arg):
         obj_name = self.sender().objectName()
@@ -260,14 +264,14 @@ class FileTab(QWidget):
         elif obj_name == "byteorder_combo":
             self.byteorder = arg
 
-        self.update_data()
+        self.session.update_filedata(self)
         self.fill_table()
 
     def fill_table(self):
         try:
             self.table.cellChanged.disconnect()
-        except TypeError:
-            pass
+        except TypeError as e:
+            print(e)
         if self.cap:
             forms = ("{:0>2X}", "{:0>7X}0")
         else:
@@ -290,7 +294,8 @@ class FileTab(QWidget):
         try:
             self.table.cellChanged.disconnect()
         except TypeError:
-            pass
+            print("TypeError, update_repr")
+
         if full_fill:
             for row in range(len(self.data) // 16 + 1):
                 work_bytes = self.data[row * 16:min((row + 1) * 16, len(self.data))]
@@ -298,6 +303,7 @@ class FileTab(QWidget):
                 new_item = QTableWidgetItem("".join(letters))
                 new_item.setFont(QFont("Consolas"))
                 self.table.setItem(row, 16, new_item)
+
         if self.changes:
             for pos in self.changes.keys():
                 item = self.table.item(pos // 16, 16)  # text representation item
@@ -317,25 +323,28 @@ class FileTab(QWidget):
         if column != 16:
             pos = row * 16 + column
             text = item.text()
-            if pos < self.length and len(text.strip(" ")) <= 2:
-                try:
-                    self.changes[pos] = int(text, 16)
-                    self.update_data()
-                except ValueError:
+            if pos < self.length:
+                if len(text.strip(" ")) <= 2:
+                    try:
+                        self.changes[pos] = int(text, 16)
+                        self.session.update_filedata(self)
+                    except ValueError:
+                        item.setText("00")
+                else:
                     item.setText("00")
                 self.update_repr()
             else:
                 item.setText("")
         else:
-            self.update_data()
+            self.session.update_filedata(self)
         self.table.cellChanged.connect(self.add_change)
 
-    def save(self):
+    def save_tab(self):
         if self.changes:
             change_pos_list = self.changes.keys()
             new_data = bytearray([self.changes[pos] if pos in change_pos_list
                                   else self.data[pos] for pos in range(len(self.data))])
-            if not self.isNew:
+            if not self.is_new:
                 with open(self.filepath, "wb") as file:
                     file.write(new_data)
             else:
@@ -349,8 +358,8 @@ class FileTab(QWidget):
             self.changes.clear()
         return 0
 
-    def close(self):
-        if self.changes or self.isNew:
+    def close_tab(self):
+        if self.changes or self.is_new:
             msg_box = QMessageBox()
             msg_box.setWindowTitle(self.filepath.split("\\")[-1])
             msg_box.setText("You have unsaved changes!")
@@ -360,11 +369,10 @@ class FileTab(QWidget):
             btn = msg_box.exec()
 
             if btn == QMessageBox.Yes.numerator:
-                return self.save()
+                return self.save_tab()
 
             elif btn == QMessageBox.Cancel.numerator:
                 return -1
-
         return 0
 
 
