@@ -136,7 +136,9 @@ class MainWindow(QMainWindow):
 
     def open_file(self, new=False):
         if not new:
-            filepath = QFileDialog.getOpenFileName(self, "Open File", "")[0]
+            filepath, ok = QFileDialog.getOpenFileName(self, "Open File", "")[0]
+            if not ok:
+                return -1
         else:
             filepath = None
 
