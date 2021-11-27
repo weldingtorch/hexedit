@@ -38,6 +38,14 @@ def setupUi(self):
     self.actionQuit.setObjectName(u"actionQuit")
     self.actionQuit.setText(u"Quit")
 
+    self.actionShowImage = QAction(self)
+    self.actionShowImage.setObjectName(u"actionShowImage")
+    self.actionShowImage.setText(u"Show Image")
+
+    self.actionShowHelp = QAction(self)
+    self.actionShowHelp.setObjectName(u"actionShowHelp")
+    self.actionShowHelp.setText(u"Show Help")
+
     self.centralwidget = QWidget(self)
     self.centralwidget.setObjectName(u"centralwidget")
     self.centralwidget.setStyleSheet(u"background-color: rgb(100, 100, 100);")
@@ -59,13 +67,15 @@ def setupUi(self):
     self.menuBar = QMenuBar(self)
     self.menuBar.setObjectName(u"menuBar")
     self.menuBar.setGeometry(QRect(0, 0, 1120, 26))
+
     self.menuFile = QMenu(self.menuBar)
     self.menuFile.setObjectName(u"menuFile")
 
+    self.menuHelp = QMenu(self.menuBar)
+    self.menuHelp.setObjectName(u"menuHelp")
+
     self.setMenuBar(self.menuBar)
-
     self.menuBar.addAction(self.menuFile.menuAction())
-
     self.menuFile.addAction(self.actionNew)
     self.menuFile.addAction(self.actionOpen)
     self.menuFile.addSeparator()
@@ -77,6 +87,12 @@ def setupUi(self):
     self.menuFile.addSeparator()
     self.menuFile.addAction(self.actionQuit)
     self.menuFile.setTitle(u"File")
+
+    self.menuBar.addAction(self.menuHelp.menuAction())
+    self.menuHelp.addAction(self.actionShowImage)
+    self.menuHelp.addSeparator()
+    self.menuHelp.addAction(self.actionShowHelp)
+    self.menuHelp.setTitle(u"Help")
 
     self.tabs.setCurrentIndex(-1)
 
