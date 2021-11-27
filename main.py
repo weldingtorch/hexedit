@@ -141,9 +141,10 @@ class MainWindow(QMainWindow):
                 return -1
             tab_name = filepath.split("/")[-1]
         else:
+            filepath = None
             tab_name = "unnamed"
         try:
-            new_tab = FileTab(self, self.session, tab_name, new)
+            new_tab = FileTab(self, self.session, filepath, new)
             self.tabs.addTab(new_tab, tab_name)
             if not new:
                 self.tabs.setTabToolTip(self.tabs.count() - 1, filepath)
@@ -212,6 +213,7 @@ class FileTab(QWidget):
             retry_flag = True
             while retry_flag:
                 try:
+                    print(self.filepath)
                     with open(self.filepath, "rb") as file:
                         self.data = file.read()
                     self.length = len(self.data)
