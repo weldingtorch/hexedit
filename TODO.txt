@@ -5,4 +5,4 @@
 5. Search of byte substring in file
 6. Make app usable through cmd(no gui)
 7. Make readme page
-8. Make binary file work
+8. Make binary file work(problem with PyQt5 dependencies, it is stated that pyinstaller should work with 5.15.3 and lower, but packager still cannot import PyQt5)
