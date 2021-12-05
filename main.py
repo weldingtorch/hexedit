@@ -421,6 +421,7 @@ class ImageWindow(QWidget):
         grid.addWidget(image_holder)
         self.setLayout(grid)
         self.setWindowTitle("Quick Help")
+        self.setFixedSize(self.sizeHint())
 
 
 if __name__ == '__main__':
