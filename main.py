@@ -12,7 +12,7 @@ import FileTabLoadUI
 import MainWindowLoadUI
 
 
-class SessionHandler():
+class SessionHandler:
     def __init__(self):
         self.con = sqlite3.connect("Sessions.sqlite3")
         self.cur = self.con.cursor()
