@@ -1,8 +1,11 @@
 import sys
+import os
 import pickle
 import sqlite3
+import webbrowser
+import random
 
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QPixmap
 from PyQt5.QtWidgets import *
 
 import FileTabLoadUI
@@ -97,6 +100,7 @@ class SessionHandler():
 class MainWindow(QMainWindow):
     def __init__(self, session):
         self.session = session
+        self.images = []
 
         super().__init__()
         MainWindowLoadUI.setupUi(self)
@@ -105,9 +109,11 @@ class MainWindow(QMainWindow):
         self.actionOpen.triggered.connect(self.open_file)
         self.actionSave.triggered.connect(self.save_file)
         self.actionSaveAll.triggered.connect(lambda: self.save_file(save_all=True))
-        self.actionClose.triggered.connect(lambda: self.close_file())
+        self.actionClose.triggered.connect(self.close_file)
         self.actionCloseAll.triggered.connect(lambda: self.close_file(close_all=True))
         self.actionQuit.triggered.connect(self.close)
+        self.actionQuickHelp.triggered.connect(self.open_image)
+        self.actionShowHelp.triggered.connect(self.open_help)
         self.tabs.tabCloseRequested.connect(self.close_file)
 
         self.show()
@@ -127,7 +133,7 @@ class MainWindow(QMainWindow):
             if btn == QMessageBox.Yes.numerator:
                 for id in ids:
                     try:
-                        new_tab = FileTab(self, self.session, filetab_id=id[0])
+                        new_tab = FileTab(self.session, filetab_id=id[0])
                         self.tabs.addTab(new_tab, new_tab.filename)
                     except FileExistsError:
                         pass
@@ -136,28 +142,37 @@ class MainWindow(QMainWindow):
 
     def open_file(self, new=False):
         if not new:
-            filepath, ok = QFileDialog.getOpenFileName(self, "Open File", "")[0]
+            filepath, ok = QFileDialog.getOpenFileName(self, "Open File", "")
             if not ok:
                 return -1
         else:
             filepath = None
 
         try:
-            new_tab = FileTab(self, self.session, filepath, new)
+            new_tab = FileTab(self.session, filepath, new)
             self.tabs.addTab(new_tab, new_tab.filename)
             if not new:
                 self.tabs.setTabToolTip(self.tabs.count() - 1, filepath)
         except (FileNotFoundError, ValueError):
-            pass
+            return -1
+        return 0
 
     def save_file(self, save_all=False):
         if not save_all:
             tab = self.tabs.currentWidget()
             if tab is not None:
-                tab.save_tab()
+                try:
+                    tab.save_tab()
+                except ValueError:
+                    return -1
         else:
             for tab_index in range(self.tabs.count()):
-                self.tabs.widget(tab_index).save_tab()
+                try:
+                    self.tabs.widget(tab_index).save_tab()
+                except ValueError:
+                    return -1
+
+        return 0
 
     def close_file(self, index=None, close_all=False):
         if not close_all:
@@ -165,18 +180,30 @@ class MainWindow(QMainWindow):
                 index = self.tabs.currentIndex()
 
             tab = self.tabs.widget(index)
-            if tab.close_tab() == 0:
+            try:
+                tab.close_tab()
                 tab.session.delete_filedata(tab.filetab_id)
                 self.tabs.removeTab(index)
+            except ValueError:
+                return -1
         else:
             for _ in range(self.tabs.count()):
                 tab = self.tabs.widget(0)
-                if tab.close_tab() == 0:
+                try:
+                    tab.close_tab()
                     tab.session.delete_filedata(tab.filetab_id)
                     self.tabs.removeTab(0)
-                else:
+                except ValueError:
                     return -1
-            return 0
+        return 0
+
+    def open_image(self):
+        new_image = ImageWindow()
+        new_image.closeEvent = lambda event: self.images.remove(new_image) and event.accept()
+        self.images.append(new_image)
+
+    def open_help(self):
+        webbrowser.open('https://github.com/weldingtorch/hexedit#readme', new=2)
 
     def closeEvent(self, event):
         if self.close_file(close_all=True) == 0:
@@ -186,8 +213,8 @@ class MainWindow(QMainWindow):
 
 
 class FileTab(QWidget):
-    def __init__(self, parent, session, filepath=None, is_new=False, filetab_id=None):
-        super().__init__(parent)
+    def __init__(self, session, filepath=None, is_new=False, filetab_id=None):
+        super().__init__()
 
         self.session = session
         self.filetab_id = filetab_id
@@ -341,23 +368,21 @@ class FileTab(QWidget):
         self.table.cellChanged.connect(self.add_change)
 
     def save_tab(self):
-        if self.changes:
-            change_pos_list = self.changes.keys()
-            new_data = bytearray([self.changes[pos] if pos in change_pos_list
-                                  else self.data[pos] for pos in range(len(self.data))])
-            if not self.is_new:
-                with open(self.filepath, "wb") as file:
+        change_pos_list = self.changes.keys()
+        new_data = bytearray([self.changes[pos] if pos in change_pos_list
+                              else self.data[pos] for pos in range(len(self.data))])
+        if not self.is_new:
+            with open(self.filepath, "wb") as file:
+                file.write(new_data)
+        else:
+            filename, ok = QFileDialog.getSaveFileName(self, "Save File", "")
+            if ok:
+                with open(filename, "wb") as file:
                     file.write(new_data)
             else:
-                filename = QFileDialog.getSaveFileName(self, "Save File", "")[0]
-                if filename:
-                    with open(filename, "wb") as file:
-                        file.write(new_data)
-                else:
-                    return -1
+                raise ValueError
 
-            self.changes.clear()
-        return 0
+        self.changes.clear()
 
     def close_tab(self):
         if self.changes or self.is_new:
@@ -370,11 +395,32 @@ class FileTab(QWidget):
             btn = msg_box.exec()
 
             if btn == QMessageBox.Yes.numerator:
-                return self.save_tab()
+                self.save_tab()
 
             elif btn == QMessageBox.Cancel.numerator:
-                return -1
-        return 0
+                raise ValueError
+
+
+class ImageWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        try:
+            images = os.listdir("./Images")
+            if images:
+                self.LoadUI(images)
+                self.show()
+        except WindowsError:
+            os.mkdir("./Images")
+
+    def LoadUI(self, images):
+        imagename = random.choice(images)
+        image_holder = QLabel()
+        image = QPixmap("./Images/" + imagename)
+        image_holder.setPixmap(image)
+        grid = QGridLayout()
+        grid.addWidget(image_holder)
+        self.setLayout(grid)
+        self.setWindowTitle("Quick Help")
 
 
 if __name__ == '__main__':

@@ -1,10 +1,8 @@
-1. Add picture tab
-2. Rewrite byte handing to use bytearray methods
-3. Make Input through text representation
-4. Add support for csv(or txt) colorschemes
-5. Add different encodings
-6. Make byteorder affect on text repr in long encodings(more than 1 byte)
-7. Search of byte substring in file
-8. Make app usable through cmd(no gui)
-9. Make readme page and delete presentation
-10. Make binary file work
+1. Rewrite byte handling to use bytearray methods
+2. Make Input through text representation
+3. Add different encodings
+4. Make byteorder affect on text repr in long encodings(more than 1 byte)
+5. Search of byte substring in file
+6. Make app usable through cmd(no gui)
+7. Make readme page
+8. Make binary file work
